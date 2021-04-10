@@ -117,7 +117,21 @@ static int check_magic()
 // 'nbits' number of bits are set to one
 static void bitmap_init(int start, int num, int nbits)
 {
-  /* YOUR CODE */
+  // static map for fast lookup: the type with first i bits set
+  static unsigned char BYTE10[] = 
+    { 0x00, 0x80, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc, 0xfe, 0xff };
+  unsigned char buf[SECTOR_SIZE];
+  for(int i=0; i<num; i++) {
+    if(nbits > 0) {
+      for(int j=0; j<SECTOR_SIZE; j++) {
+		if(nbits > 8) { buf[j] = 0xff; nbits -= 8; }
+		else { buf[j] = BYTE10[nbits]; nbits = 0; }
+      }
+    } else {
+      memset(buf, 0, SECTOR_SIZE);
+    }
+    if(Disk_Write(start+i, (char*)buf) < 0) break;
+  }
 }
 
 // set the first unused bit from a bitmap of 'nbits' bits (flip the
@@ -125,7 +139,28 @@ static void bitmap_init(int start, int num, int nbits)
 // return -1 if the bitmap is already full (no more zeros)
 static int bitmap_first_unused(int start, int num, int nbits)
 {
-  /* YOUR CODE */
+  // static map for fast lookup: the byte with the i-th bit set
+  static unsigned char BYTE1[] =
+    { 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 };
+  unsigned char buf[SECTOR_SIZE];
+  for(int i=0; i<num; i++) {
+    if(Disk_Read(start+i, (char*)buf) < 0) return -1;
+    for(int j=0; j<SECTOR_SIZE; j++) {
+      if(j >= nbits) break;
+      if(buf[j] < 0xff) {
+	int k=0;
+	while(k<8) {
+	  if((BYTE1[k]&buf[j]) == '\0') {
+	    buf[j] |= BYTE1[k];
+	    break;
+	  } else k++;
+	}
+	if(Disk_Write(start+i, (char*)buf) < 0) return -1;
+	else return i*SECTOR_SIZE*8+j*8+k;
+      }
+    }
+    nbits -= SECTOR_SIZE;
+  }
   return -1;
 }
 
@@ -133,8 +168,21 @@ static int bitmap_first_unused(int start, int num, int nbits)
 // 'start' sector; return 0 if successful, -1 otherwise
 static int bitmap_reset(int start, int num, int ibit)
 {
-  /* YOUR CODE */
-  return -1;
+  // static map for fast lookup: the byte with the i-th bit reset
+  static unsigned char BYTE0[] =
+    { 0x7f, 0xbf, 0xdf, 0xef, 0xf7, 0xfb, 0xfd, 0xfe };
+
+  // load the disk sector containing the bit
+  int ibyte = ibit/8; // the byte containing the bit
+  int i = ibyte/SECTOR_SIZE; // the sector containing the byte
+  assert(0 <= i && i < num);
+  unsigned char buf[SECTOR_SIZE];
+  if(Disk_Read(start+i, (char*)buf) < 0) return -1;
+
+  // reset the byte and write to disk
+  buf[ibyte%SECTOR_SIZE] &= BYTE0[ibit%8];
+  if(Disk_Write(start+i, (char*)buf) < 0) return -1;
+  return 0;
 }
 
 // return 1 if the file name is illegal; otherwise, return 0; legal
@@ -560,6 +608,8 @@ int File_Create(char* file)
 int File_Unlink(char* file)
 {
   /* YOUR CODE */
+  remove_inode(file, );
+
   return -1;
 }
 
@@ -649,12 +699,34 @@ int Dir_Create(char* path)
 {
   dprintf("Dir_Create('%s'):\n", path);
   return create_file_or_directory(1, path);
+
+  //if statement
+    osErrno = E_CREATE;
+    return -1;
+    
+  else {
+    return 0;
+  }
 }
 
 int Dir_Unlink(char* path)
 {
   /* YOUR CODE */
-  return -1;
+
+  //if directory does not exist
+    osErrno = E_NO_SUCH_DIR;
+    return -1;
+
+  //else if files are still within the dir
+    osErrno = E_DIR_NOT_EMPTY;
+    return -1;
+
+  //else if funtion tries to remove root dir
+    osErrno = E_ROOT_DIR;
+    return -1;
+
+  //else success
+    return 0;
 }
 
 int Dir_Size(char* path)
