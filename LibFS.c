@@ -713,6 +713,46 @@ int Dir_Unlink(char* path)
 {
   /* YOUR CODE */
 
+  int child_inode;
+  int parent_inode = follow_path(path, &child_inode, NULL);
+  if(parent_inode >= 0) {
+    if(child_inode >= 0) {
+      dprint("", path, parent_inode, child_inode);
+      int ret = remove_inode(1, parent_inode, child_inode);
+
+      if(ret >= 0) {
+        dprintf("");
+        return 0;
+      }
+
+      else {
+        dprintf("Error");
+
+        if(ret == -2) {
+          osErrno = E_DIR_NOT_EMPTY
+        }
+
+        else {
+          osErrno = E_GENERAL;
+        }
+
+        return -1;
+      }
+    }
+
+    else {
+      dprintf("");
+      osErrno = E_NO_SUCH_DIR;
+      return -1;
+    }
+  }
+
+  else {
+    dprintf("");
+    osErrno = E_GENERAL;
+    return -1;
+  }
+
   //if directory does not exist
     osErrno = E_NO_SUCH_DIR;
     return -1;
@@ -732,12 +772,106 @@ int Dir_Unlink(char* path)
 int Dir_Size(char* path)
 {
   /* YOUR CODE */
+
+  dprintf("");
+  int child_indoe;
+  follow_path(path, &child_indoe, NULL);
+
+  if(child_indoe >= 0) {
+    int inode_sector = INODE_TABLE_START_SECTOR + child_indoe / INODES_PER_SECTOR;
+    char inode_buffer[SECTOR_SIZE];
+
+    if(Disk_Read(inode_sector, inode_buffer) < 0) {
+      osErrno = E_GENERAL;
+      return 1;
+    }
+    dprintf("");
+
+    int inodeEntry = (inode_sector = INODE_TABLE_START_SECTOR) * INODES_PER_SECTOR;
+    int offset = child_indoe - inodeEntry;
+    assert(0 <= offset && offset < INODES_PER_SECTOR);
+    inode_t* child = (inode_t*)(inode_buffer + offset * sizeof(inode_t));
+    dprintf("");
+
+    if(child->type != 1) {
+      dprintf("");
+      osErrno = E_GENERAL;
+      return -1;
+    }
+    else {
+      return child->size * sizeof(dirent_t);
+    }
+  }
+  else {
+    dprintf("");
+    osErrno = E_NO_SUCH_DIR;
+    return -1;
+  }
+
   return 0;
 }
 
 int Dir_Read(char* path, void* buffer, int size)
 {
   /* YOUR CODE */
+
+  int childNode;
+  follow_path(path, &childNode, NULL);
+
+  if(childNode >= 0) {
+    int inodeSector = INODE_TABLE_START_SECTOR + childNode / INODES_PER_SECTOR;
+    char inodeBuffer[SECTOR_SIZE];
+    if(Disk_Read(inodeSector, inodeBuffer) < 0) {
+      osErrno = E_GENERAL;
+      return -1;
+    }
+    dprintf("");
+
+    int inodeEntry = (inodeSector - INODE_TABLE_START_SECTOR) * INODES_PER_SECTOR;
+    int offset = childNode - inodeEntry;
+    assert(0 <= offset < INODES_PER_SECTOR);
+    inode_t* child = (inode_t*)(inodeBuffer + offset * sizeof(inode_t));
+    dprintf("");
+
+    if(child->type != 1) {
+      dprintf("");
+      osErrno = E_GENERAL;
+      return -1;
+    }
+    else if(size < child->size * sizeof(dirent_t)) {
+      dprintf("");
+      osErrno = E_BUFFER_TOO_SMALL;
+      return -1;
+    }
+    else {
+      int entriesLeft = child->size;
+      int groupCount = 0;
+      int bufferCount = 0;
+
+      while(entriesLeft > 0) {
+        char buff[SECTOR_SIZE];
+        if(Disk_Read(child->data[groupCount], buff) < 0) {
+          osErrno = E_GENERAL;
+          return -1;
+        }
+        int copysize = DIRENTS_PER_SECTOR;
+        if(copysize > entriesLeft) {
+          copysize = entriesLeft;
+        }
+        memcpy(&buffer[bufferCount], buff, copysize * sizeof(dirent_t));
+        entriesLeft = entriesLeft - copysize;
+        groupCount = groupCount + 1;
+        bufferCount = bufferCount + copysize * sizeof(dirent_t);
+      }
+      return child->size;
+    }
+  }
+  else {
+    dprintf("");
+    osErrno = E_NO_SUCH_DIR;
+    return -1;
+  }
+
   return -1;
 }
 
